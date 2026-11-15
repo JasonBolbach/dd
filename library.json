@@ -1,0 +1,37 @@
+{
+  "name": "dd",
+  "version": "0.1.0",
+  "description": "2D vector scene graph, geometry and collision for LovyanGFX on microcontrollers (ESP32 / RP2040) and the desktop: transforms, shape primitives, arena-allocated scenes, picking, touch interaction, line / circle / box / shape-to-shape collision.",
+  "keywords": "2d, vector, graphics, lovyangfx, scene, collision, geometry, transform, touch, esp32, rp2040",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JasonBolbach/dd.git"
+  },
+  "authors": [
+    {
+      "name": "Jason Bolbach",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/JasonBolbach/dd",
+  "dependencies": [
+    {
+      "name": "LovyanGFX"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "*",
+  "headers": [
+    "dd.h"
+  ],
+  "export": {
+    "exclude": [
+      ".github",
+      ".vscode",
+      "extras",
+      "examples/*/build",
+      "build"
+    ]
+  }
+}
