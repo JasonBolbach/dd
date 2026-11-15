@@ -5,14 +5,20 @@
 // 3. LCD_W / LCD_H below must match the display class in landscape (the demo checks and warns over serial if they do not).
 // 4. Upload, open the serial monitor (115200, the Pico's USB port) for the log lines.
 //
-// There is no touch on this board, so the shapes are driven with the encoder and buttons:
-//   Encoder turn   in "select" mode: choose a shape. In the other modes: change the selected shape.
-//   ButtonA        next mode: select -> move x -> move y -> rotate -> scale -> select ...
-//   ButtonB        reset the selected shape's angle and scale (with nothing selected: culling on/off)
+// There is no touch on this board, so the shapes are driven with the encoder and buttons. They are read through SuperGUI's
+// SuperEncoder and SuperButton (which dd itself does not depend on):
+//   Encoder turn    "select" mode: choose a shape, one per detent. Other modes: change the selected shape, and the FASTER you turn the
+//                   bigger the steps (SuperEncoder's 3-speed acceleration: 1 / 5 / 20 per detent).
+//   ButtonA  short  next mode: select -> move x -> move y -> rotate -> scale -> select ...
+//            long   back to "select" mode        double click   previous mode
+//   ButtonB  short  reset the selected shape's angle and scale (nothing selected: select the first shape)
+//            medium (held 0.2 - 0.8 s) bring the selected shape to the front        long   toggle culling
 // The selected shape shows a dashed box and red crosses where it touches other shapes (dd's shape-to-shape collision).
 #include <Arduino.h>
 #include "Pins.h"
 #include "LGFX_User_TE004.h"
+#include <SuperEncoder.h>   // from SuperGUI: https://github.com/JasonBolbach/SuperGUI
+#include <SuperButton.h>
 #include <dd.h>
 #include "DemoScene.h"
 
@@ -37,45 +43,14 @@ LGFX_TE004  lcd;
 LGFX_Sprite canvas(&lcd);
 DemoScene   demo;
 
-// ---- a small quadrature encoder (interrupt driven; 4 transitions per detent) ----
-class Encoder {
- public:
-  void Begin(int a, int b) {
-    pa = a; pb = b; inst = this;
-    pinMode(pa, INPUT_PULLUP); pinMode(pb, INPUT_PULLUP);
-    last = (uint8_t)((digitalRead(pa) << 1) | digitalRead(pb));
-    attachInterrupt(digitalPinToInterrupt(pa), isr, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(pb), isr, CHANGE);
-  }
-  int Take() { noInterrupts(); int v = ticks; ticks = 0; interrupts(); return v; }     // detents since the last call (+ / -)
- private:
-  static void isr() { if (inst) inst->Poll(); }
-  void Poll() {
-    static const int8_t T[16] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
-    uint8_t s = (uint8_t)((digitalRead(pa) << 1) | digitalRead(pb));
-    acc += T[(last << 2) | s]; last = s;
-    if (acc >= 4) { ticks++; acc = 0; } else if (acc <= -4) { ticks--; acc = 0; }
-  }
-  inline static Encoder *inst = nullptr;
-  int pa = 0, pb = 0; volatile int ticks = 0; int8_t acc = 0; uint8_t last = 0;
-};
+SuperEncoder enc(PIN_ENC_A, PIN_ENC_B);                                  // interrupt driven, with acceleration
+SuperButton  btnA(PIN_BTN_A, BTN_ACTIVE_LOW), btnB(PIN_BTN_B, BTN_ACTIVE_LOW);   // timer driven: no polling needed
 
-// ---- a debounced push button (polled once per frame) ----
-class Button {
- public:
-  void Begin(int p, bool activeLow) { pin = p; low = activeLow; pinMode(pin, activeLow ? INPUT_PULLUP : INPUT); }
-  bool Pressed() {                                                   // true once per press
-    bool raw = digitalRead(pin) == (low ? LOW : HIGH);
-    uint32_t now = millis();
-    if (raw != state && now - changed > 25) { state = raw; changed = now; if (state) return true; }
-    return false;
-  }
- private:
-  int pin = 0; bool low = true, state = false; uint32_t changed = 0;
-};
-
-Encoder enc;
-Button  btnA, btnB;
+// Encoder step sizes per mode: one shape per detent when choosing, accelerating steps when editing a shape.
+static void setEncoderSteps(DemoScene::Mode m) {
+  if (m == DemoScene::M_SELECT) { enc.StepSlow = enc.StepMedium = enc.StepFast = 1; }
+  else                          { enc.StepSlow = 1; enc.StepMedium = 5; enc.StepFast = 20; }
+}
 
 static size_t freeHeap() { return rp2040.getFreeHeap(); }
 
@@ -89,8 +64,8 @@ void setup() {
     DBG.printf("WARNING: the display class reports %d x %d but LCD_W x LCD_H is %d x %d. Fix the constants (or the display class).\n",
                (int)lcd.width(), (int)lcd.height(), LCD_W, LCD_H);
 
-  if (USE_ENCODER) enc.Begin(PIN_ENC_A, PIN_ENC_B);
-  if (USE_BUTTONS) { btnA.Begin(PIN_BTN_A, BTN_ACTIVE_LOW); btnB.Begin(PIN_BTN_B, BTN_ACTIVE_LOW); }
+  if (USE_ENCODER) enc.Begin();                                              // interrupts + pull-ups
+  if (USE_BUTTONS) { const uint8_t m = BTN_ACTIVE_LOW ? INPUT_PULLUP : INPUT; btnA.Begin(m); btnB.Begin(m); }
 
   canvas.setColorDepth(SPRITE_DEPTH);
   if (!canvas.createSprite(LCD_W, LCD_H)) { DBG.println("ERROR: could not allocate the off-screen buffer (try SPRITE_DEPTH 8)."); while (true) delay(1000); }
@@ -102,12 +77,27 @@ void setup() {
   demo.Begin(&canvas, LCD_W, LCD_H);
   DBG.printf("scene built: %d objects, arena %u bytes, heap used %u, heap left %u\n", demo.Scene->Count(),
              (unsigned)demo.Scene->Arena()->InUse(), (unsigned)(heap0 - rp2040.getFreeHeap()), (unsigned)rp2040.getFreeHeap());
-  demo.EncoderTurn(0);
+  setEncoderSteps(demo.ModeIdx);
 }
 
 void loop() {
-  if (USE_ENCODER) demo.EncoderTurn(enc.Take());
-  if (USE_BUTTONS) { if (btnA.Pressed()) demo.ButtonA(); if (btnB.Pressed()) demo.ButtonB(); }
+  if (USE_BUTTONS) {
+    uint8_t ev;
+    while (btnA.GetEvent(ev)) {
+      uint8_t kind = ev & 0x0F;                                     // 1 = short, 2 = medium, 3 = long
+      if (ev & SuperButton::SB_DOUBLE) demo.PrevMode();
+      else if (kind == 1) demo.NextMode();
+      else if (kind == 3) demo.SetMode(DemoScene::M_SELECT);
+      setEncoderSteps(demo.ModeIdx);
+    }
+    while (btnB.GetEvent(ev)) {
+      uint8_t kind = ev & 0x0F;
+      if (kind == 1) demo.ResetSelected();
+      else if (kind == 2) demo.BringSelectedToFront();
+      else if (kind == 3) demo.ToggleCull();
+    }
+  }
+  if (USE_ENCODER) demo.EncoderTurn((int)enc.GetDelta());          // speed-scaled steps since the last frame
 
   demo.Frame(false, 0, 0);                      // no touch on this board
   canvas.pushSprite(0, 0);

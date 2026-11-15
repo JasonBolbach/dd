@@ -121,10 +121,10 @@ On the desktop, `ddSDLInput::Begin(w, h)` once, then `ddSDLInput::Get(x, y)` rep
 | Example | Runs on | What it shows |
 |---|---|---|
 | [`examples/DesktopDemo`](examples/DesktopDemo) | macOS / Linux / Windows (SDL) | the full showcase and stress test in a 1280x960 window (every primitive, pen styles, nested groups, a particle field with culling and object churn, buttons, a stats HUD, dragging) |
-| [`examples/FreenoveS3Demo`](examples/FreenoveS3Demo) | ESP32-S3, 480x320 touch LCD | the same scene on hardware: touch dragging with live collision contacts, PSRAM-backed buffer and arena |
-| [`examples/PicoWDemo`](examples/PicoWDemo) | Pico W / Pico 2 W, 320x240 LCD | the scene driven by an encoder and buttons (no touch), sized for 264 KB / 520 KB of RAM |
+| [`examples/FreenoveS3Demo`](examples/FreenoveS3Demo) | ESP32-S3, 480x320 touch LCD | the same scene on hardware: touch dragging with live collision contacts, PSRAM-backed buffer and arena; touch read with SuperGUI's `SuperTouch` (long press, medium press, double click) |
+| [`examples/PicoWDemo`](examples/PicoWDemo) | Pico W / Pico 2 W, 320x240 LCD | the scene driven by an accelerating encoder and buttons (no touch) through SuperGUI's `SuperEncoder` / `SuperButton`, sized for 264 KB / 520 KB of RAM |
 
-The two hardware demos are adapted from SuperGUI's hardware examples (same boards, display classes and pin maps). Each sets the display size with global `LCD_W` / `LCD_H` constants at the top of its `main.cpp`.
+The two hardware demos are adapted from SuperGUI's hardware examples (same boards, display classes and pin maps) and read their input through SuperGUI's `SuperTouch` / `SuperEncoder` / `SuperButton`. **dd itself does not depend on SuperGUI**; only these two examples do (they expect a SuperGUI checkout next to this repository, or use its GitHub URL). Each sets the display size with global `LCD_W` / `LCD_H` constants at the top of its `main.cpp`.
 They compile for `esp32s3`, `picow` and `pico2w` (`pio run -e <env>`) but have **not been run on hardware yet**.
 
 - Desktop demo: `cmake -S examples/DesktopDemo -B build && cmake --build build -j && build/dd_demo`

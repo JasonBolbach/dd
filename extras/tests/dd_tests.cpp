@@ -740,12 +740,33 @@ static bool RunDemoScene(int w, int h, int depth) {
     if (f == 140) { if (dragged) endX = dragged->GetTransform().Tx; }
     if (f == 250) d.EncoderTurn(3);                                        // select with the encoder
     if (f == 260) d.ButtonA();                                             // mode: move x
-    if (f == 262) { ddVectorPrimitive *s = d.In->Selected; float x0 = s ? s->GetTransform().Tx : 0; d.EncoderTurn(5); CHECK(s && s->GetTransform().Tx > x0 + 5.0f); }
+    if (f == 262) { ddVectorPrimitive *s = d.In->Selected; float x0 = s ? s->GetTransform().Tx : 0; d.EncoderTurn(5); CHECK(s && Near(s->GetTransform().Tx, x0 + 5.0f, 0.01f)); }                 // 1 world unit per encoder step
     if (f == 270) d.ButtonA(); if (f == 280) d.ButtonA();                  // move y, rotate
-    if (f == 282) { ddVectorPrimitive *s = d.In->Selected; float a0 = s ? s->GetTransform().Angle : 0; d.EncoderTurn(7); CHECK(s && s->GetTransform().Angle > a0 + 0.5f); }
+    if (f == 282) { ddVectorPrimitive *s = d.In->Selected; float a0 = s ? s->GetTransform().Angle : 0; d.EncoderTurn(7); CHECK(s && Near(s->GetTransform().Angle, a0 + 0.35f, 0.01f)); }              // 0.05 rad per step
     if (f == 290) d.ButtonA();                                             // scale
-    if (f == 292) { ddVectorPrimitive *s = d.In->Selected; d.EncoderTurn(9); CHECK(s && s->GetTransform().Sx > 1.2f); }
+    if (f == 292) { ddVectorPrimitive *s = d.In->Selected; d.EncoderTurn(9); CHECK(s && Near(s->GetTransform().Sx, 1.18f, 0.01f)); }                       // 0.02 per step
     if (f == 300) { d.ButtonB(); CHECK(d.In->Selected && Near(d.In->Selected->GetTransform().Sx, 1.0f) && Near(d.In->Selected->GetTransform().Angle, 0.0f)); }
+    if (f == 305) {                                                        // mode helpers and the extra gestures
+      d.SetMode(DemoScene::M_ROTATE); CHECK(d.ModeIdx == DemoScene::M_ROTATE);
+      d.PrevMode(); CHECK(d.ModeIdx == DemoScene::M_MOVE_Y);
+      d.NextMode(); d.NextMode(); CHECK(d.ModeIdx == DemoScene::M_SCALE);
+      d.SetMode(DemoScene::M_SELECT);
+      ddVectorPrimitive *s = d.In->Selected;
+      CHECK(s != nullptr);
+      if (s) {
+        ddP at = d.R->ToDisplay(ddP(s->GetTransform().Tx, s->GetTransform().Ty));           // the middle of the selected (filled) shape, in pixels
+        s->SetAngle(1.0f); s->SetScale(2.0f);
+        d.LongPress(at[0], at[1]);                                         // long press: back to angle 0, scale 1
+        CHECK(Near(s->GetTransform().Angle, 0.0f) && Near(s->GetTransform().Sx, 1.0f));
+        d.RemoveParticles(0);
+        d.MediumPress(at[0], at[1]);                                       // medium press: moved to the top of the draw order
+        ddVectorPrimitive *last = nullptr; for (ddVectorPrimitive *q = d.Scene->First(); q; q = d.Scene->Next(q)) last = q;
+        CHECK(last == s);
+        bool c0 = d.Cull; d.DoubleClick(0, 0); CHECK(d.Cull != c0); d.DoubleClick(0, 0); CHECK(d.Cull == c0);   // double click toggles culling
+        d.ToggleCull(); CHECK(d.Cull != c0); d.ToggleCull();
+        d.LongPress(w * 0.5f, h * 0.96f);                                  // a long press on a button (Tag != 0) changes nothing
+      }
+    }
     if (f == 320) { int n0 = d.ParticleCount(); d.AddParticles(200); CHECK(d.ParticleCount() == n0 + 200); }
     if (f == 340) { int n0 = d.ParticleCount(); d.RemoveParticles(150); CHECK(d.ParticleCount() == n0 - 150); }
     if (f == 360) d.Cull = false;

@@ -3,8 +3,17 @@
 The dd scene demo on a Freenove ESP32-S3-WROOM (8 MB flash, 8 MB PSRAM, both QIO) with a 480x320 touch LCD:
 one of each shape, nested groups (a solar system, a clock, a gear), a field of 400 bouncing particles, on-screen buttons and a stats HUD.
 
-**Touch:** drag any shape. The dragged shape shows a dashed box and **red crosses where it touches other shapes** (dd's shape-to-shape collision).
-Tap `+50` / `-50` to add or remove particles and `cull on/off` to see what culling saves (`drawn` / `culled` on the HUD).
+**Touch** is read through SuperGUI's `SuperTouch` (debounced touch state and gesture recognition). dd itself does not depend on SuperGUI; only these two examples do.
+
+| Gesture | Action |
+|---|---|
+| Drag a shape | move it (dd's `ddInteract` does the picking and dragging). The dragged shape shows a dashed box and **red crosses where it touches other shapes** (dd's shape-to-shape collision) |
+| Tap `+50` / `-50` / `cull` | add or remove particles, culling on/off (`drawn` / `culled` on the HUD show what culling saves) |
+| Medium press (held 0.2 - 0.8 s) on a shape | bring it to the front |
+| Long press (held over 0.8 s) on a shape | reset its angle and scale |
+| Double click anywhere | toggle culling |
+
+The finger state that drives dragging is `touch.IsTouched()` (SuperTouch's debounced state); the medium / long / double gestures come from `touch.GetEvent()`. Gesture timing (`Click1_MAX`, `Click2_MAX`, `ClickD_MAX`, `Radius`) is tuned on the `SuperTouch` object.
 
 > Status: this example **compiles and links** for the `esp32s3` environment. It has not been run on hardware yet; please report anything that behaves differently.
 
@@ -14,7 +23,7 @@ Tap `+50` / `-50` to add or remove particles and `cull on/off` to see what culli
    `lcd.getTouch()` works) and pin map.
 2. **Display size:** `LCD_W` and `LCD_H` at the top of `src/main.cpp` (480 x 320). They must match the display class in landscape; on start-up the demo prints a
    warning over serial if they do not.
-3. **Library:** `platformio.ini` uses the dd checkout two folders up (`symlink://../..`); switch to the GitHub URL line to build a copy of this folder on its own.
+3. **Libraries:** `platformio.ini` uses the dd checkout two folders up (`symlink://../..`) and the **SuperGUI** checkout next to this repository (`symlink://../../../SuperGUI`, for `SuperTouch`); switch to the GitHub URL lines to build a copy of this folder on its own.
 
 ```
 pio run -e esp32s3 -t upload
@@ -28,7 +37,7 @@ pio device monitor            # 115200
 ## How it is put together
 | File | What it holds |
 |---|---|
-| `src/main.cpp` | hardware only: options, display, touch reading, the serial log, `setup()` / `loop()` |
+| `src/main.cpp` | hardware only: options, display, `SuperTouch` set-up and gesture handling, the serial log, `setup()` / `loop()` |
 | `src/DemoScene.h` | the demo scene (portable: Arduino + LovyanGFX + dd). **Identical to the copy in `../PicoWDemo`.** |
 | `include/LGFX_User.h`, `include/Pins.h` | the display class and pin map for this board |
 

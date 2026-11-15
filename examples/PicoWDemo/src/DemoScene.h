@@ -3,8 +3,12 @@
 // the two copies are kept identical. The hardware-specific parts (display class, pins, touch / encoder) live in main.cpp.
 //
 // The scene: a row of one-of-each shapes, nested groups (a solar system, a clock, a gear), a field of bouncing particles
-// (culling + object churn) and an on-screen stats HUD. Shapes are draggable with touch, or driven with
-// an encoder + two buttons through EncoderTurn() / ButtonA() / ButtonB().
+// (culling + object churn) and an on-screen stats HUD. Shapes are draggable with touch (dd's ddInteract), or driven with an
+// encoder + two buttons. The input hardware is NOT part of this file: main.cpp reads it (SuperGUI's SuperTouch / SuperEncoder /
+// SuperButton in the two examples) and calls the input methods below:
+//   touch:    Frame(down, x, y) every frame, plus MediumPress / LongPress / DoubleClick for the extra gestures
+//   encoder:  EncoderTurn(steps), SetMode / NextMode / PrevMode
+//   buttons:  ResetSelected, BringSelectedToFront, ToggleCull, ...
 //
 // Options (define before including, e.g. in platformio.ini build_flags):
 //   DEMO_PARTICLES   how many bouncing particles (default 100)
@@ -84,7 +88,8 @@ class DemoScene {
   }
 
   // ---- encoder / button control (no touch needed) ------------------------------------------------
-  // Turn: in SELECT mode moves the selection; otherwise changes the selected item (position, angle, scale).
+  // Turn: in SELECT mode moves the selection (steps = detents); otherwise changes the selected item. The step size is what the
+  // encoder reports, so an accelerating encoder (SuperEncoder: 1 / 5 / 20 per detent) moves, rotates and scales faster the faster you turn.
   void EncoderTurn(int steps) {
     if (!steps) return;
     if (ModeIdx == M_SELECT || !In->Selected) {
@@ -97,27 +102,39 @@ class DemoScene {
     ddVectorPrimitive *s = In->Selected;
     const ddT &x = s->GetTransform();
     switch (ModeIdx) {
-      case M_MOVE_X: s->Translate(steps * 2.0f, 0); break;
-      case M_MOVE_Y: s->Translate(0, steps * 2.0f); break;
-      case M_ROTATE: s->SetAngle(x.Angle + steps * 0.1f); break;
-      case M_SCALE: { float k = x.Sx + steps * 0.05f; if (k < 0.2f) k = 0.2f; if (k > 3.0f) k = 3.0f; s->SetScale(k); } break;
+      case M_MOVE_X: s->Translate(steps * 1.0f, 0); break;                     // world units per step
+      case M_MOVE_Y: s->Translate(0, steps * 1.0f); break;
+      case M_ROTATE: s->SetAngle(x.Angle + steps * 0.05f); break;              // radians per step
+      case M_SCALE: { float k = x.Sx + steps * 0.02f; if (k < 0.2f) k = 0.2f; if (k > 3.0f) k = 3.0f; s->SetScale(k); } break;
       default: break;
     }
   }
-  // A: next mode (select, move x, move y, rotate, scale).  Selects the first item if nothing is selected yet.
-  void ButtonA() {
-    if (!In->Selected && !Items.empty()) In->Selected = Items[SelIdx];
-    ModeIdx = (Mode)((ModeIdx + 1) % M_COUNT);
+  bool HasSelection() const { return In && In->Selected != nullptr; }
+  void SetMode(Mode m) { EnsureSelection(); ModeIdx = m; }
+  void NextMode() { SetMode((Mode)((ModeIdx + 1) % M_COUNT)); }
+  void PrevMode() { SetMode((Mode)((ModeIdx + M_COUNT - 1) % M_COUNT)); }
+  void ButtonA() { NextMode(); }                      // kept for simple two-button setups: A = next mode
+  // Resets the selected item's angle and scale; with nothing selected it selects the first item.
+  void ResetSelected() {
+    if (!In->Selected) { EnsureSelection(); return; }
+    In->Selected->SetAngle(0); In->Selected->SetScale(1.0f);
   }
-  // B: reset the selected item's angle and scale; with nothing selected, toggles culling.
-  void ButtonB() {
-    if (In->Selected) { In->Selected->SetAngle(0); In->Selected->SetScale(1.0f); }
-    else Cull = !Cull;
+  void ButtonB() { ResetSelected(); }                 // kept for simple two-button setups: B = reset
+  void BringSelectedToFront() { if (In->Selected && In->Selected->Tag == 0) Scene->MoveToFront(In->Selected); }
+  void ToggleCull() {
+    Cull = !Cull;
+    if (cullLabel) cullLabel->SetText(Cull ? "cull on" : "cull off");
   }
   const char *ModeName() const {
     static const char *n[M_COUNT] = { "select", "move x", "move y", "rotate", "scale" };
     return n[ModeIdx];
   }
+
+  // ---- extra touch gestures (from a gesture recognizer such as SuperTouch); coordinates are display pixels ----
+  // Medium press on a shape: bring it to the front.   Long press: reset its angle and scale.   Double click anywhere: toggle culling.
+  void MediumPress(float px, float py) { ddVectorPrimitive *p = At(px, py); if (p && p->Tag == 0) { In->Selected = p; Scene->MoveToFront(p); } }
+  void LongPress(float px, float py)   { ddVectorPrimitive *p = At(px, py); if (p && p->Tag == 0) { In->Selected = p; p->SetAngle(0); p->SetScale(1.0f); } }
+  void DoubleClick(float, float)       { ToggleCull(); }
 
   // ---- particles -----------------------------------------------------------------------------
   int ParticleCount() const { return (int)Parts.size(); }
@@ -150,6 +167,11 @@ class DemoScene {
   enum { BTN_ADD = 1, BTN_SUB, BTN_CULL };
   ddText *cullLabel = nullptr;
 
+  ddVectorPrimitive *At(float px, float py) {                 // the topmost shape under a display pixel (6 px of slop)
+    return Scene->Pick(R->ToWorld(ddP(px, py)), 6.0f / R->PixelsPerUnit());
+  }
+  void EnsureSelection() { if (!In->Selected && !Items.empty()) In->Selected = Items[SelIdx]; }
+
   float Rnd() { RngState = RngState * 1664525u + 1013904223u; return (RngState >> 8) / 16777216.0f; }
 
   // particle field: the rectangle the particles bounce inside
@@ -179,7 +201,7 @@ class DemoScene {
     switch (p->Tag) {
       case BTN_ADD:  d->AddParticles(50); break;
       case BTN_SUB:  d->RemoveParticles(50); break;
-      case BTN_CULL: d->Cull = !d->Cull; if (d->cullLabel) d->cullLabel->SetText(d->Cull ? "cull on" : "cull off"); break;
+      case BTN_CULL: d->ToggleCull(); break;
     }
   }
 

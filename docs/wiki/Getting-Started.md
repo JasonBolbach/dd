@@ -113,12 +113,12 @@ The demo is the best tour of what exists: drag the shapes, click the buttons, re
 ## Running on a real board
 
 Two ready-made hardware demos (adapted from SuperGUI's, same boards and pin maps) are in the repository: [`examples/FreenoveS3Demo`](https://github.com/JasonBolbach/dd/tree/main/examples/FreenoveS3Demo) (ESP32-S3, 480x320 touch)
-and [`examples/PicoWDemo`](https://github.com/JasonBolbach/dd/tree/main/examples/PicoWDemo) (Pico W / Pico 2 W, 320x240, encoder + buttons). Each is a PlatformIO project (`pio run -e <env> -t upload`) that you can copy and adapt:
+and [`examples/PicoWDemo`](https://github.com/JasonBolbach/dd/tree/main/examples/PicoWDemo) (Pico W / Pico 2 W, 320x240, encoder + buttons). They read their input through SuperGUI's `SuperTouch` (ESP32-S3) and `SuperEncoder` / `SuperButton` (Pico), so they need SuperGUI next to the dd checkout (or its GitHub URL in `lib_deps`); **dd itself does not depend on SuperGUI**. Each is a PlatformIO project (`pio run -e <env> -t upload`) that you can copy and adapt:
 `src/DemoScene.h` is the portable scene, `src/main.cpp` is hardware only, and the display size is two global constants (`LCD_W`, `LCD_H`) at the top of `main.cpp`.
 
 Points that matter on a microcontroller:
 
 - For a large sprite call `spr->setPsram(true)` before `createSprite()` so the pixel buffer lives in PSRAM. On a Pico W, use an 8-bit sprite (`setColorDepth(8)`): a 320x240 16-bit buffer would not leave room for the scene.
 - The arena also tries PSRAM first, then falls back to normal heap. Size its cap from `Arena()->Peak()` ([Performance and memory](Performance-and-Memory)).
-- Use your own touch reading for `ddInteract` (`lcd.getTouch()`), or drive the scene from an encoder and buttons as the Pico demo does. `ddSDLInput.h` is desktop-only.
+- Feed `ddInteract` from any touch source: `lcd.getTouch()` directly, or a gesture recognizer such as SuperTouch (the S3 demo passes its debounced finger state to `ddInteract::Update` and uses its long / medium / double gestures for extras). Or drive the scene from an encoder and buttons as the Pico demo does. `ddSDLInput.h` is desktop-only.
 - The examples compile for `esp32s3`, `picow` and `pico2w` but have not been run on hardware yet: please report anything that behaves differently.

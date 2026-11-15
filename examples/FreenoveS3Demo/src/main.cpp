@@ -5,10 +5,16 @@
 // 2. LCD_W / LCD_H below must match the display class in landscape (the demo checks and warns over serial if they do not).
 // 3. Upload, open the serial monitor (115200) for the log lines.
 //
-// Touch: drag any shape; tap the on-screen buttons (+50 / -50 particles, cull on/off). The dragged shape shows a dashed box and
-// red crosses where it touches other shapes (dd's shape-to-shape collision).
+// Touch is read through SuperGUI's SuperTouch (debounced touch state and gesture recognition), which dd itself does not depend on:
+//   drag a shape       move it (dd's ddInteract does the picking and dragging). The dragged shape shows a dashed box and
+//                      red crosses where it touches other shapes (dd's shape-to-shape collision).
+//   tap a button       +50 / -50 particles, cull on/off
+//   medium press       (held 0.2 - 0.8 s) on a shape: bring it to the front
+//   long press         (held > 0.8 s) on a shape: reset its angle and scale
+//   double click       anywhere: toggle culling
 #include <Arduino.h>
 #include "LGFX_User.h"
+#include <SuperTouch.h>   // from SuperGUI: https://github.com/JasonBolbach/SuperGUI
 #include <dd.h>
 #include "DemoScene.h"
 
@@ -21,12 +27,22 @@ constexpr int  LCD_W = 480;             // display width in landscape (pixels)
 constexpr int  LCD_H = 320;             // display height in landscape (pixels)
 constexpr int  SPRITE_DEPTH = 16;       // colour depth of the off-screen buffer: 16 = RGB565 (the buffer is LCD_W x LCD_H x 2 bytes, held in PSRAM)
 constexpr bool USE_TOUCH = true;        // false = no touch (the scene still animates)
+// Gesture timing lives in SuperTouch (touch.Click1_MAX / Click2_MAX / ClickD_MAX / Radius ...); the defaults are used here.
 constexpr uint32_t LOG_EVERY_MS = 5000; // serial status line interval
 // ------------------------------------------------------
 
 LGFX        lcd;
 LGFX_Sprite canvas(&lcd);
 DemoScene   demo;
+
+// Touch source for SuperTouch: LovyanGFX's own getTouch (works with whatever touch driver your LGFX class sets).
+static bool ReadTouch(int16_t &x, int16_t &y) {
+  int32_t tx, ty;
+  if (!lcd.getTouch(&tx, &ty)) return false;
+  x = (int16_t)tx; y = (int16_t)ty;
+  return true;
+}
+SuperTouch touch(ReadTouch);
 
 static size_t freeHeap() { return ESP.getFreeHeap(); }       // internal RAM
 
@@ -52,9 +68,18 @@ void setup() {
 }
 
 void loop() {
-  int32_t tx = 0, ty = 0;
-  bool down = USE_TOUCH && lcd.getTouch(&tx, &ty);
-  demo.Frame(down, (float)tx, (float)ty);
+  if (USE_TOUCH) {
+    touch.Poll();                                                    // debounced touch state + gesture recognition (rate limited inside)
+    SuperTouchEvent ev;
+    while (touch.GetEvent(ev)) {                                     // the extra gestures; drag / tap / select are handled by dd's ddInteract in Frame()
+      bool click = ev.Type == ST_SHORT_CLICK || ev.Type == ST_MEDIUM_CLICK || ev.Type == ST_LONG_CLICK;
+      if (!click) continue;
+      if (ev.Double) demo.DoubleClick(ev.X, ev.Y);
+      else if (ev.Type == ST_MEDIUM_CLICK) demo.MediumPress(ev.X, ev.Y);
+      else if (ev.Type == ST_LONG_CLICK) demo.LongPress(ev.X, ev.Y);
+    }
+  }
+  demo.Frame(USE_TOUCH && touch.IsTouched(), (float)touch.GetX(), (float)touch.GetY());   // SuperTouch's debounced finger state drives ddInteract
   canvas.pushSprite(0, 0);
 
   static uint32_t lastLog = 0;
