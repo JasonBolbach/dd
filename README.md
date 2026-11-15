@@ -24,9 +24,10 @@ Header-only, float-only maths (friendly to FPUs that have no double support), no
 
 ```ini
 lib_deps =
-    lovyan03/LovyanGFX@^1.2.21
-    https://github.com/JasonBolbach/dd.git
+    jasonbolbach/dd@^0.2.2
 ```
+
+(LovyanGFX is pulled in automatically.) To track the repository instead: `https://github.com/JasonBolbach/dd.git`.
 
 Working on dd itself next to a project (this is how it is developed): put the checkout beside your project and use
 `lib_deps = symlink://../path/to/dd`, or add its parent folder to `lib_extra_dirs`.
