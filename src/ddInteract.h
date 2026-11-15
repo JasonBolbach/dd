@@ -1,17 +1,53 @@
 #pragma once
-// Touch / pointer interaction on top of RenderBlock::Pick.
-//  - Press selects the topmost primitive under the pointer (with a pixel-sized tolerance).
-//  - Dragging moves primitives marked Draggable (top-level primitives of the scene).
-//  - Tap = press + release without moving, quickly.
-// Feed it once per frame:  interact.Update(touching, displayPos);
+/**
+ * @file ddInteract.h
+ * Touch / pointer interaction on top of RenderBlock::Pick.
+ *
+ *   - A PRESS selects the topmost primitive under the pointer (with a pixel-sized tolerance).
+ *   - DRAGGING moves primitives marked `Draggable` (top-level primitives of the scene).
+ *   - A TAP is a quick press-and-release without moving.
+ *
+ * @code
+ * ddInteract in(&renderer, &scene);
+ * in.OnEvent = [](ddEvent e, ddVectorPrimitive *p, const ddP &world, void *) {
+ *   if (e == ddEvent::Tap && p) onTapped(p);
+ * };
+ * shape->Draggable = true;
+ *
+ * void loop() {
+ *   ddP t; bool down = readTouch(&t);        // display pixels
+ *   in.Update(down, t);                      // once per frame
+ *   scene.Draw(&renderer);
+ *   in.DrawSelection();
+ * }
+ * @endcode
+ *
+ * @warning Feed Update() EVERY frame, including frames where nothing is touched, or releases and taps are never seen.
+ * @note On the desktop, a click shorter than one frame is still seen when you read the mouse through ddSDLInput (it latches presses).
+ */
 #include "ddVector.h"
 #if !defined(ARDUINO)
 #include <chrono>
 #endif
 
+/**
+ * What happened to a primitive: Press (pointer went down on it), Drag (moved while down, after passing the tap distance),
+ * Release (pointer went up), Tap (a quick Release without movement; delivered after the Release).
+ */
 enum struct ddEvent { Press, Drag, Release, Tap };
+/**
+ * Event callback signature.
+ * @param ev     The event.
+ * @param p      The primitive the pointer pressed (never null for the events generated here).
+ * @param world  Pointer position in world units.
+ * @param user   The `User` pointer you set on the ddInteract.
+ * @note A plain function pointer (no std::function), so it costs no heap on microcontrollers. A capture-less lambda converts to it.
+ */
 typedef void (*ddEventFn)(ddEvent ev, ddVectorPrimitive *p, const ddP &world, void *user);
 
+/**
+ * Millisecond clock: Arduino millis() on the boards, steady_clock on the desktop. Wraps after ~49 days; differences are what matter.
+ */
 inline uint32_t ddNowMs() {
 #if defined(ARDUINO)
   return (uint32_t)millis();
@@ -21,6 +57,16 @@ inline uint32_t ddNowMs() {
 #endif
 }
 
+/**
+ * Pointer interaction state machine: selection, dragging and taps over a scene.
+ *
+ * @par Fields
+ *   - `OnEvent`, `User` callback and its user pointer. `PickTolPx` pick slop in pixels (default 4). `TapMaxPx` / `TapMaxMs` limits for a tap (6 px, 400 ms).
+ *   - `Selected` the last pressed primitive (cleared by a tap on empty space). `Active` the primitive under the pointer right now.
+ *
+ * @warning `Selected` and `Active` are raw pointers. Call Forget(p) before removing a primitive so they do not dangle.
+ * @warning Only TOP-LEVEL primitives of the scene are picked (a child of a group is picked as the group).
+ */
 class ddInteract {
  public:
   ddR *R;
@@ -33,9 +79,19 @@ class ddInteract {
   ddVectorPrimitive *Selected = nullptr;   // last pressed primitive (cleared by a tap on empty space)
   ddVectorPrimitive *Active   = nullptr;   // primitive under the pointer right now
 
+  /**
+   * @param r      The renderer (used to convert display pixels to world units).
+   * @param scene  The scene to pick from.
+   */
   ddInteract(ddR *r, RenderBlock *scene) : R(r), Scene(scene) {}
 
-  // `down` = pointer/finger is down; `display` = position in display pixels.
+  /**
+   * Advances the interaction. Call once per frame.
+   * @param down     true while the pointer / finger is down.
+   * @param display  Pointer position in DISPLAY pixels (what a touch controller reports).
+   * @note Events fire from inside this call (OnEvent), in this order on a press: Press; while held and moved: Drag; on release: Release then, for a tap, Tap.
+   * @warning Dragging only moves primitives whose `Draggable` is true; Drag events fire either way.
+   */
   void Update(bool down, const ddP &display) {
     ddP w = R->D2W * display;
     if (down && !Was) {
@@ -59,10 +115,16 @@ class ddInteract {
     Was = down;
   }
 
-  // Call before removing a primitive so Selected/Active don't dangle.
+  /**
+   * Clears `Selected` / `Active` if they point at p. Call it before RenderBlock::Remove(p).
+   */
   void Forget(const ddVectorPrimitive *p) { if (Selected == p) Selected = nullptr; if (Active == p) Active = nullptr; }
 
-  // Dashed outline around the selected primitive (if it has known bounds).
+  /**
+   * Draws a dashed rectangle around the selected primitive (if it has known bounds). Call after drawing the scene.
+   * @param color  RGB565 outline colour (default white).
+   * @note The box is the primitive's axis-aligned world bounds, so a rotated shape gets a larger box than the shape.
+   */
   void DrawSelection(uint16_t color = TFT_WHITE) {
     float x0, y0, x1, y1;
     if (!Selected || !Selected->ParentBounds(x0, y0, x1, y1)) return;

@@ -1,5 +1,7 @@
 # dd
 
+![dd desktop demo](docs/images/demo.png)
+
 2D vector scenes, geometry and collision for [LovyanGFX](https://github.com/lovyan03/LovyanGFX), on ESP32 / RP2040-class microcontrollers and on the desktop (SDL).
 Header-only, float-only maths (friendly to FPUs that have no double support), no heap churn in the drawing path.
 
@@ -15,6 +17,8 @@ Header-only, float-only maths (friendly to FPUs that have no double support), no
 | `ddInteract.h` | Select / drag / tap on top of picking | yes |
 | `ddSDLInput.h` | Desktop only: mouse mapped to the SDL panel's scaling, plus an aspect lock | yes (SDL) |
 | `dd.h` | Includes everything except `ddSDLInput.h` | yes |
+
+**Documentation:** [wiki pages](docs/wiki/Home.md) ([concepts](docs/wiki/Concepts.md), [collision guide](docs/wiki/Collision-Guide.md), [API reference](docs/wiki/API-Index.md)); every public class and function also carries a doc comment in `src/` that your IDE shows on hover.
 
 ## Install (PlatformIO)
 

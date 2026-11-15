@@ -1,13 +1,30 @@
 #pragma once
-// Chunked arena allocator with per-object free and a hard byte cap.
-//  - Memory comes from PSRAM first on ESP32, then the regular heap.
-//  - Grows lazily in chunks (never moves existing objects) up to MaxBytes.
-//  - Reset() destroys everything and keeps the chunks, so rebuilding every frame costs no malloc/free.
-//  - Delete() destroys one object and recycles its block (size-class free lists, blocks <= 1 KB),
-//    so long-lived scenes that add/remove objects don't grow without bound.
-//  - Objects with non-trivial destructors are tracked and destroyed on Delete()/Reset().
-//  - New/NewArray/Delete/Reset return nullptr / do nothing rather than throw.
-// Block layout: [Ext (only if a destructor is needed)][Base header 16 B][object ...], 16-byte aligned.
+/**
+ * @file ddArena.h
+ * Chunked arena allocator with per-object free and a hard byte cap. Graphics-free.
+ *
+ * This is where every scene primitive lives. It exists so that a scene of thousands of small objects does not fragment
+ * the heap of a microcontroller and so that a hard memory ceiling can be enforced.
+ *
+ * @par How it works
+ *   - Memory is requested from the system in CHUNKS (default 8 KB) and carved up by a bump pointer. On ESP32 the chunks
+ *     come from PSRAM first, then normal heap. Chunks are never moved, so object addresses stay valid.
+ *   - The total of all chunks is capped (default 256 KB). When the cap would be exceeded, New() returns nullptr instead
+ *     of throwing or crashing.
+ *   - Reset() destroys everything and keeps the chunks, so rebuilding a scene every frame costs no malloc/free.
+ *   - Delete() destroys one object and puts its block on a size-class free list (blocks up to 1 KB), so a long-lived
+ *     scene that adds and removes objects reuses memory instead of growing.
+ *   - Objects with non-trivial destructors are tracked and destroyed by Delete() and Reset().
+ *
+ * @par Block layout
+ *   [Ext (only if a destructor is needed)][16-byte Base header][object ...], always 16-byte aligned. The header is how
+ *   Delete() can free an object knowing only its address.
+ *
+ * @warning Blocks are recycled by SIZE CLASS (16-byte steps, a block may also serve a request up to 128 bytes smaller).
+ *          A scene whose mix of object sizes changes drastically over time can still creep upward in Capacity().
+ * @warning Not thread-safe. Use one arena per thread, or lock around it.
+ * @note Over-aligned types (alignof > 16) are rejected at compile time.
+ */
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -18,15 +35,41 @@
 #include <esp_heap_caps.h>
 #endif
 
+/**
+ * DD_ARENA_DEFAULT_MAX: default byte cap of an arena (256 KB). Define it before including dd to change the default
+ * for every RenderBlock, or pass a cap to the RenderBlock / ddArena constructor per instance.
+ * @note The cap counts chunk memory obtained from the system, not bytes handed out, so it bounds real RAM use.
+ */
 #ifndef DD_ARENA_DEFAULT_MAX
 #define DD_ARENA_DEFAULT_MAX (256u * 1024u)   // default cap; override per block via RenderBlock(maxBytes)
 #endif
+/**
+ * DD_ARENA_CHUNK: growth step in bytes (8 KB). Smaller wastes less on tiny scenes; larger means fewer system allocations.
+ * A request bigger than a chunk gets a chunk of its own size.
+ */
 #ifndef DD_ARENA_CHUNK
 #define DD_ARENA_CHUNK (8u * 1024u)           // growth granularity
 #endif
 
+/**
+ * Rounds a size up to the next multiple of 16 (the arena's block granularity). Compile-time usable.
+ */
 constexpr size_t ddRound16(size_t n) { return (n + 15) & ~size_t(15); }
 
+/**
+ * The arena allocator. See the file comment for the model.
+ *
+ * @code
+ * ddArena arena(64 * 1024);                 // cap at 64 KB
+ * ddCircle *c = arena.New<ddCircle>(ddP(0, 0), 5.0f);
+ * if (!c) handleFull();
+ * arena.Delete(c);                          // destroy + recycle just this one
+ * arena.Reset();                            // destroy everything, keep the memory
+ * @endcode
+ *
+ * @note You rarely use ddArena directly: RenderBlock owns one and exposes Emplace / Remove / Clear.
+ * @warning Non-copyable (copying would double-free the chunks).
+ */
 class ddArena {
   struct Chunk { Chunk *Next; size_t Size; size_t Used; };
   struct Ext   { Ext *Next; Ext *Prev; void (*Fn)(void *); };
@@ -105,13 +148,32 @@ class ddArena {
   }
 
  public:
+  /**
+   * Creates an empty arena. No memory is allocated until the first New().
+   * @param maxBytes    Hard cap on total chunk memory (default DD_ARENA_DEFAULT_MAX).
+   * @param chunkBytes  Growth step (default DD_ARENA_CHUNK).
+   */
   explicit ddArena(size_t maxBytes = DD_ARENA_DEFAULT_MAX, size_t chunkBytes = DD_ARENA_CHUNK)
     : MaxBytes(maxBytes), ChunkBytes(chunkBytes) {}
+  /**
+   * Destroys every object and returns all chunk memory to the system.
+   */
   ~ddArena() { Release(); }
+  /**
+   * Copying is disabled.
+   */
   ddArena(const ddArena &) = delete;
   ddArena &operator=(const ddArena &) = delete;
 
-  // Construct a T in the arena. Returns nullptr if the cap would be exceeded.
+  /**
+   * Constructs a T inside the arena.
+   * @tparam T     Any type with alignof <= 16. If it has a non-trivial destructor the arena will call it later.
+   * @param a      Constructor arguments, perfectly forwarded.
+   * @return       Pointer to the new object, or nullptr if the byte cap would be exceeded (Overflowed() then returns true).
+   * @warning ALWAYS check for nullptr when the cap is small or the scene is large; dereferencing it crashes.
+   * @warning Never `delete` the result. Use Delete(), Reset() or let the arena be destroyed.
+   * @note Objects deriving from ddVectorPrimitive must derive singly so the object's address equals the arena block's.
+   */
   template <class T, class... A>
   T *New(A &&...a) {
     static_assert(alignof(T) <= 16, "over-aligned types are not supported");
@@ -129,15 +191,27 @@ class ddArena {
     return o;
   }
 
-  // Uninitialised array of trivially-destructible items; release with Delete().
+  /**
+   * Allocates an uninitialised array of n trivially-destructible items (e.g. the points of a polygon).
+   * @tparam T  A trivially destructible type (checked at compile time).
+   * @param n   Element count.
+   * @return    The array, or nullptr if the cap would be exceeded. Release it with Delete().
+   * @warning The elements are NOT constructed: assign or placement-new each one before reading it.
+   */
   template <class T>
   T *NewArray(size_t n) {
     static_assert(std::is_trivially_destructible<T>::value, "NewArray needs a trivially destructible type");
     return (T *)AllocBlock(sizeof(T) * n, false);
   }
 
-  // Destroy one object (or free an array) from New/NewArray and recycle its block.
-  // Pass the address New returned (a base-class pointer to a singly-derived object is fine).
+  /**
+   * Destroys one object (or frees one array) from New / NewArray and recycles its block.
+   * @param obj  The address New / NewArray returned. A base-class pointer to a singly-derived object is fine.
+   *               nullptr is ignored.
+   * @warning Deleting an address that did not come from this arena, or deleting twice, is detected by a header check and
+   *          ignored in most cases, but it is still a bug in the caller.
+   * @note Does nothing while the arena is inside Reset() (the reset is already destroying everything).
+   */
   void Delete(void *obj) {
     if (!obj || Resetting) return;
     Base *b = BaseOf(obj);
@@ -151,7 +225,11 @@ class ddArena {
     ReleaseBlock(obj);
   }
 
-  // Destroy everything, keep the chunks for reuse.
+  /**
+   * Destroys every live object (newest first) and rewinds all chunks, keeping the memory for reuse.
+   * @note This is what makes a per-frame scene free: Reset(), rebuild, draw.
+   * @warning Every pointer previously returned by New / NewArray is invalid afterwards.
+   */
   void Reset() {
     Resetting = true;
     while (Live) {
@@ -166,19 +244,47 @@ class ddArena {
     for (size_t i = 0; i < NCLASS; i++) Free[i] = nullptr;
     LiveBytes = 0;
   }
-  // Reset and give the memory back to the system.
+  /**
+   * Reset(), then gives all chunk memory back to the system. The arena can be used again afterwards (it will re-grow).
+   */
   void Release() {
     Reset();
     for (Chunk *c = Head; c;) { Chunk *n = c->Next; free(c); c = n; }
     Head = Cur = Last = nullptr; Total = 0;
   }
 
+  /**
+   * True while Reset() is running its destructors. Destructors that call back into the arena (e.g. a group destroying its
+   * children) use it to avoid freeing things twice.
+   */
   bool   IsResetting() const { return Resetting; }
+  /**
+   * @return Bytes of chunk memory currently held from the system (never exceeds Max()).
+   */
   size_t Capacity() const { return Total; }         // bytes currently held from the system
+  /**
+   * @return The byte cap.
+   */
   size_t Max() const { return MaxBytes; }
+  /**
+   * Changes the byte cap.
+   * @warning Lowering it below Capacity() does not free anything; it only prevents further growth.
+   */
   void   SetMax(size_t m) { MaxBytes = m; }
+  /**
+   * @return Bytes in live blocks, headers included. Rises with New(), falls with Delete(), zero after Reset().
+   */
   size_t InUse() const { return LiveBytes; }        // bytes in live blocks (headers included)
+  /**
+   * @return The largest InUse() ever reached. Use it to size the cap: run your heaviest scene, read Peak(), add headroom.
+   */
   size_t Peak() const { return PeakBytes; }         // most live bytes at once
+  /**
+   * @return true if any allocation has ever been refused because of the cap (until ClearOverflow()).
+   */
   bool   Overflowed() const { return Overflow; }
+  /**
+   * Clears the Overflowed() flag.
+   */
   void   ClearOverflow() { Overflow = false; }
 };
