@@ -93,7 +93,7 @@ Pure geometry (no scene) lives in `ddGeom.h`: `ddCollideLineCircle`, `ddCollideL
 
 ## 5. Run the desktop demo and tests
 
-Both need SDL2 (`brew install sdl2 cmake` on macOS) and a LovyanGFX checkout next to the dd repository (or `-DLGFX_ROOT=...`).
+Both need SDL2 (`brew install sdl2 cmake` on macOS; On current Homebrew `sdl2` is the *sdl2-compat* layer, which runs SDL2 programs on top of SDL3: if the program complains it cannot find libSDL3, run `brew install sdl3` as well. The hardware examples need no SDL) and a LovyanGFX checkout next to the dd repository (or `-DLGFX_ROOT=...`).
 
 ```
 cmake -S examples/DesktopDemo -B build-demo && cmake --build build-demo -j && build-demo/dd_demo
@@ -112,7 +112,13 @@ The demo is the best tour of what exists: drag the shapes, click the buttons, re
 
 ## Running on a real board
 
-- For a large sprite, call `spr->setPsram(true)` before `createSprite()` so the pixel buffer lives in PSRAM.
-- The arena also tries PSRAM first, then falls back to normal heap.
-- Use your own touch reading for `ddInteract`; `ddSDLInput.h` is desktop-only.
-- This path has not been exercised on hardware yet: please report anything that behaves differently.
+Two ready-made hardware demos (adapted from SuperGUI's, same boards and pin maps) are in the repository: [`examples/FreenoveS3Demo`](https://github.com/JasonBolbach/dd/tree/main/examples/FreenoveS3Demo) (ESP32-S3, 480x320 touch)
+and [`examples/PicoWDemo`](https://github.com/JasonBolbach/dd/tree/main/examples/PicoWDemo) (Pico W / Pico 2 W, 320x240, encoder + buttons). Each is a PlatformIO project (`pio run -e <env> -t upload`) that you can copy and adapt:
+`src/DemoScene.h` is the portable scene, `src/main.cpp` is hardware only, and the display size is two global constants (`LCD_W`, `LCD_H`) at the top of `main.cpp`.
+
+Points that matter on a microcontroller:
+
+- For a large sprite call `spr->setPsram(true)` before `createSprite()` so the pixel buffer lives in PSRAM. On a Pico W, use an 8-bit sprite (`setColorDepth(8)`): a 320x240 16-bit buffer would not leave room for the scene.
+- The arena also tries PSRAM first, then falls back to normal heap. Size its cap from `Arena()->Peak()` ([Performance and memory](Performance-and-Memory)).
+- Use your own touch reading for `ddInteract` (`lcd.getTouch()`), or drive the scene from an encoder and buttons as the Pico demo does. `ddSDLInput.h` is desktop-only.
+- The examples compile for `esp32s3`, `picow` and `pico2w` but have not been run on hardware yet: please report anything that behaves differently.

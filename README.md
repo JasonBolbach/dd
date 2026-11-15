@@ -117,16 +117,24 @@ On the desktop, `ddSDLInput::Begin(w, h)` once, then `ddSDLInput::Get(x, y)` rep
 - `DD_DEBUG` (define it): enables the float formatting helpers (`ToString`, `ddStr`, `Print`, point coordinate labels). Leave it off for production.
 - `DD_ARENA_DEFAULT_MAX`, `DD_ARENA_CHUNK`: default arena cap and growth step.
 
-## Desktop demo and tests
-- [`examples/DesktopDemo`](examples/DesktopDemo): a showcase plus stress test in a 1280x960 SDL window (every primitive, pen styles, nested groups, a particle field with
-  culling and object churn, buttons, a stats HUD, dragging). `cmake -S examples/DesktopDemo -B build && cmake --build build -j && build/dd_demo`.
-- [`extras/tests`](extras/tests): ~20,000 checks (arena, scene, rendering pixels, input mapping, geometry and shape collision with randomised cross-checks against
+## Examples and tests
+| Example | Runs on | What it shows |
+|---|---|---|
+| [`examples/DesktopDemo`](examples/DesktopDemo) | macOS / Linux / Windows (SDL) | the full showcase and stress test in a 1280x960 window (every primitive, pen styles, nested groups, a particle field with culling and object churn, buttons, a stats HUD, dragging) |
+| [`examples/FreenoveS3Demo`](examples/FreenoveS3Demo) | ESP32-S3, 480x320 touch LCD | the same scene on hardware: touch dragging with live collision contacts, PSRAM-backed buffer and arena |
+| [`examples/PicoWDemo`](examples/PicoWDemo) | Pico W / Pico 2 W, 320x240 LCD | the scene driven by an encoder and buttons (no touch), sized for 264 KB / 520 KB of RAM |
+
+The two hardware demos are adapted from SuperGUI's hardware examples (same boards, display classes and pin maps). Each sets the display size with global `LCD_W` / `LCD_H` constants at the top of its `main.cpp`.
+They compile for `esp32s3`, `picow` and `pico2w` (`pio run -e <env>`) but have **not been run on hardware yet**.
+
+- Desktop demo: `cmake -S examples/DesktopDemo -B build && cmake --build build -j && build/dd_demo`
+- Tests: [`extras/tests`](extras/tests): ~20,000 checks (arena, scene, rendering pixels, input mapping, geometry and shape collision with randomised cross-checks against
   independent reference implementations, plus a 6,000-object stress run). `cmake -S extras/tests -B build && cmake --build build -j && build/dd_tests`.
 
-Both need SDL2 and a LovyanGFX checkout (looked up at `../../../LovyanGFX`, i.e. next to this repository, or pass `-DLGFX_ROOT=...`).
+The desktop demo and the tests need SDL2 (macOS: `brew install sdl2`; On current Homebrew `sdl2` is the *sdl2-compat* layer, which runs SDL2 programs on top of SDL3: if the program complains it cannot find libSDL3, run `brew install sdl3` as well. The hardware examples need no SDL.) and a LovyanGFX checkout (looked up at `../../../LovyanGFX`, i.e. next to this repository, or pass `-DLGFX_ROOT=...`).
 
 ## Status
-Developed and tested on macOS with the SDL panel. The ESP32 paths (PSRAM-first arena, Arduino `delay` / `millis`) are written but have not been run on hardware yet.
+Developed and tested on macOS with the SDL panel. The ESP32 / RP2040 / RP2350 paths (PSRAM-first arena, Arduino `delay` / `millis`) and the two hardware demos compile for `esp32s3`, `picow` and `pico2w` but have not been run on hardware yet.
 3D is planned and not started.
 
 ## License

@@ -31,7 +31,8 @@
       ".vscode",
       "extras",
       "examples/*/build",
-      "build"
+      "build",
+      "examples/*/.pio"
     ]
   }
 }

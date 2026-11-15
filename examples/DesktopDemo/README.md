@@ -12,6 +12,7 @@ The window can be resized: it keeps 4:3 and the mouse stays matched to the pictu
 ## Build and run
 ```
 brew install sdl2 cmake            # macOS (Linux: your package manager's SDL2 + cmake)
+                                   # on current Homebrew sdl2 is the sdl2-compat layer and also needs:  brew install sdl3
 cmake -S . -B build
 cmake --build build -j
 build/dd_demo

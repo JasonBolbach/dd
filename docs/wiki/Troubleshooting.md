@@ -59,6 +59,7 @@ See [Performance and memory](Performance-and-Memory). Quick checks: culling on, 
 | Message / symptom | Fix |
 |---|---|
 | `LovyanGFX.hpp` not found | Add `lovyan03/LovyanGFX` to `lib_deps`; for the desktop CMake builds put a LovyanGFX checkout next to the dd repository or pass `-DLGFX_ROOT=...`. |
+| Desktop program says it cannot find libSDL3 | On current Homebrew `sdl2` is the sdl2-compat layer, which runs SDL2 programs on top of SDL3. `brew install sdl3` as well. dd itself only uses the SDL2 API. |
 | `SDL.h` not found (desktop) | Install SDL2 (`brew install sdl2`). `ddSDLInput.h` is desktop-only; guard it with `#ifdef LGFX_SDL`. |
 | `LGFX` is not a type | The library does not define your display class. In the demo, `LGFX_AUTODETECT.hpp` provides one for SDL. On hardware, define your own `LGFX` class. |
 | Warnings about float to double promotion | In your own code use `sinf`/`cosf`, `1.0f` literals. The demo is built with `-Wdouble-promotion` to catch these. |

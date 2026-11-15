@@ -7,6 +7,7 @@
 #include "ddSDLInput.h"
 #include "ddGeom.h"
 #include "ddCollide.h"
+#include "DemoScene.h"      // the hardware demo scene (examples/FreenoveS3Demo/src), driven here with a fake clock
 
 static int Failures = 0, Checks = 0;
 #define CHECK(c) do { Checks++; if (!(c)) { Failures++; printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -713,6 +714,63 @@ static void TestShapeCollision() {
   CHECK(bad == 0 && cc > 4000 && rr > 3000 && rcir > 4000);
 }
 
+// The hardware demo scene shared by examples/FreenoveS3Demo and examples/PicoWDemo, run headless at the three display sizes the examples use.
+static bool RunDemoScene(int w, int h, int depth) {
+  SECTION("hardware demo scene");
+  LGFX_Sprite spr; spr.setColorDepth(depth);
+  CHECK(spr.createSprite(w, h));
+  DemoScene d;
+  d.FreeHeap = []() -> size_t { return 100000; };
+  d.Begin(&spr, w, h);
+  printf("  %dx%d @%d bit: %d objects, %d particles, arena %zu bytes\n", w, h, depth, d.Scene->Count(), d.ParticleCount(), d.Scene->Arena()->InUse());
+  CHECK(d.Scene->Count() > 20 && d.ParticleCount() == DEMO_PARTICLES);
+  CHECK(!d.Scene->Arena()->Overflowed());
+  CHECK(Near(d.HW / d.HH, (float)w / (float)h, 1e-3f));                    // the world follows the display's aspect ratio
+
+  int touchingFrames = 0;
+  float startX = 0, endX = 0; ddVectorPrimitive *dragged = nullptr;
+  int particlesBeforeTap = 0, particlesAfterTap = 0;
+  for (int f = 0; f < 600; f++) {
+    fakeNowUs() += 33000;
+    bool down = false; float px = 0, py = 0;
+    if (f >= 100 && f < 140) {                                              // press the filled circle (second shape) and drag it right into its neighbour
+      down = true; px = w * (2.0f / 9.0f + 0.0035f * (f - 100)); py = h * 0.19f;
+    }
+    if (f == 101) { dragged = d.In->Selected; if (dragged) startX = dragged->GetTransform().Tx; }
+    if (f == 140) { if (dragged) endX = dragged->GetTransform().Tx; }
+    if (f == 250) d.EncoderTurn(3);                                        // select with the encoder
+    if (f == 260) d.ButtonA();                                             // mode: move x
+    if (f == 262) { ddVectorPrimitive *s = d.In->Selected; float x0 = s ? s->GetTransform().Tx : 0; d.EncoderTurn(5); CHECK(s && s->GetTransform().Tx > x0 + 5.0f); }
+    if (f == 270) d.ButtonA(); if (f == 280) d.ButtonA();                  // move y, rotate
+    if (f == 282) { ddVectorPrimitive *s = d.In->Selected; float a0 = s ? s->GetTransform().Angle : 0; d.EncoderTurn(7); CHECK(s && s->GetTransform().Angle > a0 + 0.5f); }
+    if (f == 290) d.ButtonA();                                             // scale
+    if (f == 292) { ddVectorPrimitive *s = d.In->Selected; d.EncoderTurn(9); CHECK(s && s->GetTransform().Sx > 1.2f); }
+    if (f == 300) { d.ButtonB(); CHECK(d.In->Selected && Near(d.In->Selected->GetTransform().Sx, 1.0f) && Near(d.In->Selected->GetTransform().Angle, 0.0f)); }
+    if (f == 320) { int n0 = d.ParticleCount(); d.AddParticles(200); CHECK(d.ParticleCount() == n0 + 200); }
+    if (f == 340) { int n0 = d.ParticleCount(); d.RemoveParticles(150); CHECK(d.ParticleCount() == n0 - 150); }
+    if (f == 360) d.Cull = false;
+    if (f == 361) CHECK(d.R->Culled == 0);
+    if (f == 380) d.Cull = true;
+    if (f == 399) particlesBeforeTap = d.ParticleCount();
+    if (f >= 400 && f < 420) { down = true; px = w * 0.5f; py = h * 0.96f; } // tap the on-screen "-50" button
+    if (f == 430) particlesAfterTap = d.ParticleCount();
+    d.Frame(down, px, py);
+    touchingFrames += d.Touching > 0;
+  }
+  CHECK(dragged != nullptr);
+  CHECK(endX - startX > 25.0f);                                             // the shape followed the finger
+  CHECK(touchingFrames > 0);                                                // and the collision overlay noticed it touching a neighbour
+  CHECK(particlesBeforeTap - particlesAfterTap == 50);                      // the touch button removed 50 particles
+  CHECK(!d.Scene->Arena()->Overflowed());
+  CHECK(d.Scene->Arena()->InUse() < d.Scene->Arena()->Max());
+  return true;
+}
+static void TestHardwareDemo() {
+  RunDemoScene(480, 320, 16);      // FreenoveS3Demo
+  RunDemoScene(320, 240, 16);      // PicoWDemo, Pico 2 W
+  RunDemoScene(320, 240, 8);       // PicoWDemo, Pico W (8-bit buffer)
+}
+
 static void Stress() {
   SECTION("stress");
   LGFX_Sprite spr; spr.setColorDepth(16); spr.createSprite(1280, 960);
@@ -808,6 +866,7 @@ int main() {
   TestGeom();
   TestBox();
   TestShapeCollision();
+  TestHardwareDemo();
   Stress();
   printf("\n%d checks, %d failures\n", Checks, Failures);
   return Failures ? 1 : 0;

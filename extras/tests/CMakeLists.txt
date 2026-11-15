@@ -27,7 +27,8 @@ file(GLOB Target_Files CONFIGURE_DEPENDS
     ${LGFX_SRC}/lgfx/v1/lv_font/*.c
 )
 add_executable(${PROJECT_NAME} ${Target_Files})
-target_include_directories(${PROJECT_NAME} PUBLIC ${DD_ROOT}/src ${LGFX_SRC})
+# The hardware demo scene is tested headless with a fake Arduino.h (shim/); its two copies must stay identical.
+target_include_directories(${PROJECT_NAME} PUBLIC ${DD_ROOT}/src ${LGFX_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/shim ${DD_ROOT}/examples/FreenoveS3Demo/src)
 
 option(DD_DEBUG "Enable debug float formatting helpers" ON)
 if(DD_DEBUG)
@@ -37,6 +38,8 @@ set_source_files_properties(dd_tests.cpp PROPERTIES COMPILE_OPTIONS "-Wdouble-pr
 
 enable_testing()
 add_test(NAME dd_tests COMMAND ${PROJECT_NAME})
+add_test(NAME demo_scene_copies_identical
+         COMMAND ${CMAKE_COMMAND} -E compare_files ${DD_ROOT}/examples/FreenoveS3Demo/src/DemoScene.h ${DD_ROOT}/examples/PicoWDemo/src/DemoScene.h)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     find_package(SDL2 REQUIRED SDL2)
