@@ -38,7 +38,7 @@ Open the serial monitor (115200) on the Pico's **USB** port for the log.
 | `src/DemoScene.h` | the demo scene (portable). **Identical to the copy in `../FreenoveS3Demo`.** |
 
 ## Libraries
-`platformio.ini` uses the dd checkout two folders up (`symlink://../..`) and the **SuperGUI** checkout next to this repository (`symlink://../../../SuperGUI`, for `SuperEncoder` and `SuperButton`).
+`platformio.ini` uses the dd checkout two folders up (`symlink://../..`) and **SuperGUI** from the PlatformIO registry (`jasonbolbach/SuperGUI`, for `SuperEncoder` and `SuperButton`).
 Switch to the GitHub URL lines to build a copy of this folder on its own.
 
 ## Using another board or display

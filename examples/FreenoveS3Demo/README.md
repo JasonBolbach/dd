@@ -23,7 +23,7 @@ The finger state that drives dragging is `touch.IsTouched()` (SuperTouch's debou
    `lcd.getTouch()` works) and pin map.
 2. **Display size:** `LCD_W` and `LCD_H` at the top of `src/main.cpp` (480 x 320). They must match the display class in landscape; on start-up the demo prints a
    warning over serial if they do not.
-3. **Libraries:** `platformio.ini` uses the dd checkout two folders up (`symlink://../..`) and the **SuperGUI** checkout next to this repository (`symlink://../../../SuperGUI`, for `SuperTouch`); switch to the GitHub URL lines to build a copy of this folder on its own.
+3. **Libraries:** `platformio.ini` uses the dd checkout two folders up (`symlink://../..`) and **SuperGUI** from the PlatformIO registry (`jasonbolbach/SuperGUI`, for `SuperTouch`).
 
 ```
 pio run -e esp32s3 -t upload
