@@ -1,6 +1,6 @@
 {
   "name": "dd",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "2D vector scene graph, geometry and collision for LovyanGFX on microcontrollers (ESP32 / RP2040) and the desktop: transforms, shape primitives, arena-allocated scenes, picking, touch interaction, line / circle / box / shape-to-shape collision.",
   "keywords": "2d, vector, graphics, lovyangfx, scene, collision, geometry, transform, touch, esp32, rp2040",
   "repository": {
